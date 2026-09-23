@@ -12,6 +12,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- html2pdf.js for Client-side PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
     <script>
         tailwind.config = {
@@ -45,6 +47,18 @@
             background-color: #ffffff;
             font-weight: 700;
         }
+
+        /* Print and PDF Export Styles */
+        @media print {
+            body { background-color: #ffffff !important; color: #0f172a !important; }
+            header, #dropZone, #fileInfoBanner, #pdfExportModal, #pdfLoadingModal, #btnResetFilters, #inputProductFilter, #inputRawSearch, footer, .no-print {
+                display: none !important;
+            }
+            .tab-btn { display: none !important; }
+            main { padding: 0 !important; max-width: 100% !important; margin: 0 !important; }
+            .bg-white { box-shadow: none !important; border: 1px solid #e2e8f0 !important; }
+            .page-break-avoid { break-inside: avoid; page-break-inside: avoid; }
+        }
     </style>
 </head>
 <body class="text-slate-800 antialiased min-h-screen flex flex-col">
@@ -74,7 +88,12 @@
                 <button id="btnDownloadCSV" class="px-3 py-1.5 text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg shadow-sm transition duration-200 flex items-center space-x-1.5">
                     <i class="fa-solid fa-file-arrow-down"></i>
                     <span class="hidden sm:inline">결과</span>
-                    <span>다운로드</span>
+                    <span>CSV 다운</span>
+                </button>
+                <button id="btnOpenPDFModal" class="px-3 py-1.5 text-xs sm:text-sm bg-rose-600 hover:bg-rose-500 text-white font-medium rounded-lg shadow-sm transition duration-200 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-file-pdf"></i>
+                    <span class="hidden sm:inline">분석결과</span>
+                    <span>PDF 저장</span>
                 </button>
             </div>
         </div>
@@ -481,6 +500,114 @@
         <p>매출 데이터 분석 대시보드 &copy; 2026. Interactive CSV Data Analytics Platform.</p>
     </footer>
 
+    <!-- PDF Export Modal -->
+    <div id="pdfExportModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-100 overflow-hidden transform transition-all animate-in fade-in zoom-in duration-200">
+            <!-- Modal Header -->
+            <div class="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-lg">
+                        <i class="fa-solid fa-file-pdf"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-base">분석 결과 PDF 저장</h3>
+                        <p class="text-xs text-slate-500">현재 데이터 분석 결과를 고화질 PDF 보고서로 내보냅니다.</p>
+                    </div>
+                </div>
+                <button id="btnClosePDFModal" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 space-y-4 text-xs text-slate-700">
+                <!-- Option Selection -->
+                <div>
+                    <label class="block font-semibold text-slate-800 mb-2">리포트 형태 선택</label>
+                    <div class="space-y-2.5">
+                        <label class="flex items-start p-3 rounded-xl border-2 border-brand-500 bg-brand-50/30 cursor-pointer transition hover:bg-brand-50/50 relative pdf-option-label" id="labelOptionExecutive">
+                            <input type="radio" name="pdfReportType" value="executive" checked class="mt-1 mr-3 text-brand-600 focus:ring-brand-500">
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-bold text-slate-900 text-sm">종합 분석 보고서</span>
+                                    <span class="bg-brand-100 text-brand-700 text-[10px] font-bold px-2 py-0.5 rounded-full">추천 · A4 최적화</span>
+                                </div>
+                                <p class="text-slate-500 mt-1 leading-relaxed">
+                                    주요 KPI 지표 5종, 핵심 차트 4종(일별 추이/카테고리/지점/인기상품), 지점 및 카테고리별 실적 요약 테이블이 최적의 A4 규격으로 정리된 경영 요약 보고서입니다.
+                                </p>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start p-3 rounded-xl border border-slate-200 hover:border-slate-300 cursor-pointer transition hover:bg-slate-50 relative pdf-option-label" id="labelOptionCurrent">
+                            <input type="radio" name="pdfReportType" value="current" class="mt-1 mr-3 text-brand-600 focus:ring-brand-500">
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-bold text-slate-900 text-sm">현재 화면 (선택된 탭) 저장</span>
+                                    <span id="textCurrentTabBadge" class="bg-slate-100 text-slate-600 text-[10px] font-semibold px-2 py-0.5 rounded-full">종합 개요 탭</span>
+                                </div>
+                                <p class="text-slate-500 mt-1 leading-relaxed">
+                                    현재 화면에서 활성화된 탭의 분석 결과와 표, 차트 화면을 그대로 PDF로 저장합니다.
+                                </p>
+                            </div>
+                        </label>
+
+                        <label class="flex items-start p-3 rounded-xl border border-slate-200 hover:border-slate-300 cursor-pointer transition hover:bg-slate-50 relative pdf-option-label" id="labelOptionPrint">
+                            <input type="radio" name="pdfReportType" value="print" class="mt-1 mr-3 text-brand-600 focus:ring-brand-500">
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-bold text-slate-900 text-sm">브라우저 인쇄 / 직접 저장</span>
+                                    <span class="bg-amber-100 text-amber-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">인쇄(Ctrl+P)</span>
+                                </div>
+                                <p class="text-slate-500 mt-1 leading-relaxed">
+                                    브라우저의 인쇄 대화상자를 열어 프린터로 직접 출력하거나 PDF로 저장합니다.
+                                </p>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Settings -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">문서 제목</label>
+                        <input type="text" id="inputPdfTitle" value="매출 데이터 분석 결과 보고서" class="w-full border border-slate-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">용지 방향</label>
+                        <select id="selectPdfOrientation" class="w-full border border-slate-200 rounded-lg p-2 text-xs focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white">
+                            <option value="portrait" selected>세로 방향 (Portrait)</option>
+                            <option value="landscape">가로 방향 (Landscape)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-end space-x-3">
+                <button id="btnCancelPDF" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-200 font-medium text-xs transition">
+                    취소
+                </button>
+                <button id="btnExecutePDF" class="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-md shadow-rose-200 transition duration-200 flex items-center space-x-2">
+                    <i class="fa-solid fa-file-arrow-down"></i>
+                    <span>PDF 다운로드</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PDF Loading Indicator Modal -->
+    <div id="pdfLoadingModal" class="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex flex-col items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl p-6 shadow-2xl flex flex-col items-center max-w-xs text-center border border-slate-100">
+            <div class="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
+                <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+            </div>
+            <h4 class="font-bold text-slate-900 text-sm mb-1">고화질 PDF 보고서 생성 중</h4>
+            <p class="text-xs text-slate-500 leading-relaxed">
+                차트와 분석 데이터를 고해상도로 렌더링하고 있습니다. 잠시만 기다려주세요...
+            </p>
+        </div>
+    </div>
+
     <script>
         let rawDataset = [];
         let filteredDataset = [];
@@ -606,6 +733,35 @@
 
             document.getElementById('btnDownloadCSV').addEventListener('click', downloadFilteredDataCSV);
 
+            // PDF Export Event Listeners
+            document.getElementById('btnOpenPDFModal').addEventListener('click', openPDFModal);
+            document.getElementById('btnClosePDFModal').addEventListener('click', closePDFModal);
+            document.getElementById('btnCancelPDF').addEventListener('click', closePDFModal);
+            document.getElementById('btnExecutePDF').addEventListener('click', executePDFExport);
+
+            // PDF Option Selection UI highlights
+            const radioOptions = document.querySelectorAll('input[name="pdfReportType"]');
+            radioOptions.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    document.querySelectorAll('.pdf-option-label').forEach(label => {
+                        label.classList.remove('border-2', 'border-brand-500', 'bg-brand-50/30');
+                        label.classList.add('border-slate-200');
+                    });
+                    const parentLabel = radio.closest('.pdf-option-label');
+                    if (parentLabel) {
+                        parentLabel.classList.remove('border-slate-200');
+                        parentLabel.classList.add('border-2', 'border-brand-500', 'bg-brand-50/30');
+                    }
+                });
+            });
+
+            // Close modal when clicking backdrop
+            document.getElementById('pdfExportModal').addEventListener('click', (e) => {
+                if (e.target.id === 'pdfExportModal') {
+                    closePDFModal();
+                }
+            });
+
             const csvInput = document.getElementById('csvFileInput');
             csvInput.addEventListener('change', (e) => {
                 const file = e.target.files[0];
@@ -726,6 +882,503 @@
             URL.revokeObjectURL(url);
 
             showNotification('현재 필터링된 분석 결과가 CSV 파일로 다운로드되었습니다.');
+        }
+
+        // ==================== PDF EXPORT SYSTEM ====================
+
+        function openPDFModal() {
+            if (!filteredDataset || filteredDataset.length === 0) {
+                showNotification('저장할 분석 데이터가 없습니다.', 'error');
+                return;
+            }
+            // Update active tab badge
+            const activeTabBtn = document.querySelector('.tab-btn.active');
+            const activeTabName = activeTabBtn ? activeTabBtn.textContent.trim() : '현재 화면';
+            const badge = document.getElementById('textCurrentTabBadge');
+            if (badge) badge.textContent = `${activeTabName} 탭`;
+
+            const modal = document.getElementById('pdfExportModal');
+            modal.classList.remove('hidden');
+        }
+
+        function closePDFModal() {
+            const modal = document.getElementById('pdfExportModal');
+            modal.classList.add('hidden');
+        }
+
+        function executePDFExport() {
+            const selectedType = document.querySelector('input[name="pdfReportType"]:checked')?.value || 'executive';
+            const title = document.getElementById('inputPdfTitle').value.trim() || '매출 데이터 분석 결과 보고서';
+            const orientation = document.getElementById('selectPdfOrientation').value || 'portrait';
+
+            if (selectedType === 'print') {
+                closePDFModal();
+                window.print();
+                return;
+            }
+
+            closePDFModal();
+            const loadingModal = document.getElementById('pdfLoadingModal');
+            loadingModal.classList.remove('hidden');
+
+            setTimeout(() => {
+                if (selectedType === 'executive') {
+                    exportExecutiveReportPDF(title, orientation);
+                } else if (selectedType === 'current') {
+                    exportCurrentTabPDF(title, orientation);
+                }
+            }, 350);
+        }
+
+        function getChartBase64(chartId) {
+            try {
+                if (chartInstances[chartId] && typeof chartInstances[chartId].toBase64Image === 'function') {
+                    return chartInstances[chartId].toBase64Image('image/png', 1);
+                }
+                const canvas = document.getElementById(chartId);
+                if (canvas) {
+                    return canvas.toDataURL('image/png');
+                }
+            } catch (e) {
+                console.warn('Chart to base64 conversion failed for:', chartId, e);
+            }
+            return null;
+        }
+
+        function exportExecutiveReportPDF(reportTitle, orientation) {
+            try {
+                const totalRevenue = filteredDataset.reduce((sum, d) => sum + d.sales, 0);
+                const totalQty = filteredDataset.reduce((sum, d) => sum + d.qty, 0);
+                const totalDiscount = filteredDataset.reduce((sum, d) => sum + d.discount, 0);
+                const count = filteredDataset.length;
+                const avgOrderValue = count > 0 ? totalRevenue / count : 0;
+                const promoCount = filteredDataset.filter(d => d.promo === 'Y').length;
+                const promoRatio = count > 0 ? ((promoCount / count) * 100).toFixed(1) : 0;
+                const originalTotal = totalRevenue + totalDiscount;
+                const discountRatio = originalTotal > 0 ? ((totalDiscount / originalTotal) * 100).toFixed(1) : 0;
+
+                const startDate = document.getElementById('startDate').value || '시작일';
+                const endDate = document.getElementById('endDate').value || '종료일';
+                const storeVal = document.getElementById('selectStore').value;
+                const catVal = document.getElementById('selectCategory').value;
+                const promoVal = document.getElementById('selectPromo').value;
+
+                const storeText = storeVal === 'ALL' ? '전체 지점' : storeVal;
+                const catText = catVal === 'ALL' ? '전체 카테고리' : catVal;
+                const promoText = promoVal === 'ALL' ? '전체 (행사+일반)' : (promoVal === 'Y' ? '행사 적용만' : '일반 판매만');
+
+                // Get Chart Images
+                const imgTrend = getChartBase64('chartOverviewTrend');
+                const imgCat = getChartBase64('chartOverviewCat');
+                const imgStore = getChartBase64('chartOverviewStore');
+                const imgTop = getChartBase64('chartOverviewTop');
+
+                // Store Summary Rows
+                const storeMap = {};
+                filteredDataset.forEach(d => {
+                    if (!storeMap[d.store]) storeMap[d.store] = { sales: 0, qty: 0, discount: 0, count: 0 };
+                    storeMap[d.store].sales += d.sales;
+                    storeMap[d.store].qty += d.qty;
+                    storeMap[d.store].discount += d.discount;
+                    storeMap[d.store].count += 1;
+                });
+                const storeRows = Object.keys(storeMap).map(s => {
+                    const item = storeMap[s];
+                    const share = totalRevenue > 0 ? ((item.sales / totalRevenue) * 100).toFixed(1) : 0;
+                    return `
+                        <tr style="border-bottom: 1px solid #f1f5f9;">
+                            <td style="padding: 5px 8px; font-weight: 600; color: #1e293b;">${s}</td>
+                            <td style="padding: 5px 8px; text-align: right; color: #475569;">${formatNum(item.count)}건</td>
+                            <td style="padding: 5px 8px; text-align: right; color: #475569;">${formatNum(item.qty)}개</td>
+                            <td style="padding: 5px 8px; text-align: right; color: #e11d48;">${formatKRW(item.discount)}</td>
+                            <td style="padding: 5px 8px; text-align: right; font-weight: 700; color: #0f172a;">${formatKRW(item.sales)}</td>
+                            <td style="padding: 5px 8px; text-align: right; font-weight: 600; color: #2563eb;">${share}%</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                // Category Summary Rows
+                const catMap = {};
+                filteredDataset.forEach(d => {
+                    if (!catMap[d.category]) catMap[d.category] = { sales: 0, qty: 0, discount: 0, count: 0, priceSum: 0 };
+                    catMap[d.category].sales += d.sales;
+                    catMap[d.category].qty += d.qty;
+                    catMap[d.category].discount += d.discount;
+                    catMap[d.category].count += 1;
+                    catMap[d.category].priceSum += (d.price * d.qty);
+                });
+                const catRows = Object.keys(catMap).map(c => {
+                    const item = catMap[c];
+                    const avgP = item.qty > 0 ? item.priceSum / item.qty : 0;
+                    return `
+                        <tr style="border-bottom: 1px solid #f1f5f9;">
+                            <td style="padding: 5px 8px; font-weight: 600; color: #1e293b;">${c}</td>
+                            <td style="padding: 5px 8px; text-align: right; color: #475569;">${formatNum(item.count)}건</td>
+                            <td style="padding: 5px 8px; text-align: right; color: #475569;">${formatNum(item.qty)}개</td>
+                            <td style="padding: 5px 8px; text-align: right; color: #475569;">${formatKRW(avgP)}</td>
+                            <td style="padding: 5px 8px; text-align: right; color: #e11d48;">${formatKRW(item.discount)}</td>
+                            <td style="padding: 5px 8px; text-align: right; font-weight: 700; color: #0f172a;">${formatKRW(item.sales)}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                // Top 5 Products
+                const prodMap = {};
+                filteredDataset.forEach(d => {
+                    if (!prodMap[d.product]) prodMap[d.product] = { category: d.category, qty: 0, discount: 0, sales: 0 };
+                    prodMap[d.product].qty += d.qty;
+                    prodMap[d.product].discount += d.discount;
+                    prodMap[d.product].sales += d.sales;
+                });
+                const top5Products = Object.entries(prodMap).sort((a, b) => b[1].sales - a[1].sales).slice(0, 5);
+                const top5Rows = top5Products.map(([name, d], idx) => `
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 5px 8px; font-weight: 700; color: #64748b; width: 30px;">${idx + 1}</td>
+                        <td style="padding: 5px 8px; font-weight: 600; color: #1e293b;">${name}</td>
+                        <td style="padding: 5px 8px; color: #64748b;"><span style="background:#f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 9px;">${d.category}</span></td>
+                        <td style="padding: 5px 8px; text-align: right; color: #475569;">${formatNum(d.qty)}개</td>
+                        <td style="padding: 5px 8px; text-align: right; color: #e11d48;">${formatKRW(d.discount)}</td>
+                        <td style="padding: 5px 8px; text-align: right; font-weight: 700; color: #0f172a;">${formatKRW(d.sales)}</td>
+                    </tr>
+                `).join('');
+
+                // Build Container
+                const isLandscape = orientation === 'landscape';
+                const reportEl = document.createElement('div');
+                reportEl.style.width = isLandscape ? '1120px' : '794px';
+                reportEl.style.padding = '24px 28px';
+                reportEl.style.backgroundColor = '#ffffff';
+                reportEl.style.color = '#0f172a';
+                reportEl.style.fontFamily = "'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+                reportEl.style.boxSizing = 'border-box';
+                reportEl.style.lineHeight = '1.35';
+                reportEl.style.position = 'absolute';
+                reportEl.style.left = '0';
+                reportEl.style.top = '0';
+                reportEl.style.zIndex = '-9999';
+                reportEl.style.opacity = '1';
+
+                reportEl.innerHTML = `
+                    <!-- PAGE 1: Header + KPI Summary + Visual Charts -->
+                    <div style="page-break-after: always; padding-bottom: 16px;">
+                        <!-- Report Header -->
+                        <div style="border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: flex-end;">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+                                    <span style="background-color: #2563eb; color: #ffffff; padding: 3px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;">EXECUTIVE REPORT</span>
+                                    <span style="font-size: 10px; color: #64748b;">매출 데이터 분석 플랫폼</span>
+                                </div>
+                                <h1 style="font-size: 20px; font-weight: 800; color: #0f172a; margin: 0;">${reportTitle}</h1>
+                                <p style="font-size: 10px; color: #64748b; margin: 2px 0 0 0;">일자별 · 지점별 · 카테고리별 실적 분석 종합 보고서</p>
+                            </div>
+                            <div style="text-align: right; font-size: 10px; color: #475569;">
+                                <div style="font-weight: 600; color: #0f172a;">출력일시: ${new Date().toLocaleDateString('ko-KR')} ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</div>
+                                <div>분석 모수: 총 <strong style="color: #2563eb;">${count.toLocaleString()}</strong>건 레코드</div>
+                            </div>
+                        </div>
+
+                        <!-- Filter Conditions Banner -->
+                        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 7px 12px; margin-bottom: 14px; font-size: 10px; display: flex; justify-content: space-between; align-items: center;">
+                            <div><strong>조회 기간:</strong> ${startDate} ~ ${endDate}</div>
+                            <div style="display: flex; gap: 10px;">
+                                <span><strong>지점:</strong> ${storeText}</span>
+                                <span><strong>카테고리:</strong> ${catText}</span>
+                                <span><strong>행사:</strong> ${promoText}</span>
+                            </div>
+                        </div>
+
+                        <!-- KPI Summary Cards Grid -->
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px;">
+                            <div style="background: #ffffff; border: 1px solid #cbd5e1; border-top: 3px solid #10b981; border-radius: 6px; padding: 8px 10px;">
+                                <div style="font-size: 9px; color: #64748b; font-weight: 600;">총 매출액 (실매출)</div>
+                                <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-top: 3px;">${formatKRW(totalRevenue)}</div>
+                                <div style="font-size: 8px; color: #10b981; margin-top: 2px;">할인 차감 후 실입금액</div>
+                            </div>
+                            <div style="background: #ffffff; border: 1px solid #cbd5e1; border-top: 3px solid #3b82f6; border-radius: 6px; padding: 8px 10px;">
+                                <div style="font-size: 9px; color: #64748b; font-weight: 600;">총 판매수량</div>
+                                <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-top: 3px;">${formatNum(totalQty)}개</div>
+                                <div style="font-size: 8px; color: #3b82f6; margin-top: 2px;">누적 판매 수량 합계</div>
+                            </div>
+                            <div style="background: #ffffff; border: 1px solid #cbd5e1; border-top: 3px solid #f43f5e; border-radius: 6px; padding: 8px 10px;">
+                                <div style="font-size: 9px; color: #64748b; font-weight: 600;">총 할인액</div>
+                                <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-top: 3px;">${formatKRW(totalDiscount)}</div>
+                                <div style="font-size: 8px; color: #f43f5e; margin-top: 2px;">할인율: ${discountRatio}%</div>
+                            </div>
+                            <div style="background: #ffffff; border: 1px solid #cbd5e1; border-top: 3px solid #f59e0b; border-radius: 6px; padding: 8px 10px;">
+                                <div style="font-size: 9px; color: #64748b; font-weight: 600;">건당 평균 매출</div>
+                                <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-top: 3px;">${formatKRW(avgOrderValue)}</div>
+                                <div style="font-size: 8px; color: #f59e0b; margin-top: 2px;">주문 건당 평균 수입</div>
+                            </div>
+                            <div style="background: #ffffff; border: 1px solid #cbd5e1; border-top: 3px solid #6366f1; border-radius: 6px; padding: 8px 10px;">
+                                <div style="font-size: 9px; color: #64748b; font-weight: 600;">행사 매출 비중</div>
+                                <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-top: 3px;">${promoRatio}%</div>
+                                <div style="font-size: 8px; color: #6366f1; margin-top: 2px;">행사 ${promoCount}건 / 전체 ${count}건</div>
+                            </div>
+                        </div>
+
+                        <!-- Core Charts 2x2 Grid -->
+                        <div style="display: grid; grid-template-columns: ${isLandscape ? 'repeat(4, 1fr)' : '1fr 1fr'}; gap: 12px;">
+                            <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; background: #ffffff;">
+                                <div style="font-size: 10px; font-weight: 700; color: #1e293b; margin-bottom: 4px;">① 일별 매출 추이</div>
+                                <div style="height: 165px; display: flex; align-items: center; justify-content: center;">
+                                    ${imgTrend ? `<img src="${imgTrend}" style="max-width: 100%; max-height: 165px; object-fit: contain;">` : '<span style="font-size:9px;color:#94a3b8;">차트 로드 실패</span>'}
+                                </div>
+                            </div>
+                            <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; background: #ffffff;">
+                                <div style="font-size: 10px; font-weight: 700; color: #1e293b; margin-bottom: 4px;">② 카테고리별 매출 비중</div>
+                                <div style="height: 165px; display: flex; align-items: center; justify-content: center;">
+                                    ${imgCat ? `<img src="${imgCat}" style="max-width: 100%; max-height: 165px; object-fit: contain;">` : '<span style="font-size:9px;color:#94a3b8;">차트 로드 실패</span>'}
+                                </div>
+                            </div>
+                            <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; background: #ffffff;">
+                                <div style="font-size: 10px; font-weight: 700; color: #1e293b; margin-bottom: 4px;">③ 지점별 매출 실적</div>
+                                <div style="height: 165px; display: flex; align-items: center; justify-content: center;">
+                                    ${imgStore ? `<img src="${imgStore}" style="max-width: 100%; max-height: 165px; object-fit: contain;">` : '<span style="font-size:9px;color:#94a3b8;">차트 로드 실패</span>'}
+                                </div>
+                            </div>
+                            <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; background: #ffffff;">
+                                <div style="font-size: 10px; font-weight: 700; color: #1e293b; margin-bottom: 4px;">④ 상위 5개 베스트셀러</div>
+                                <div style="height: 165px; display: flex; align-items: center; justify-content: center;">
+                                    ${imgTop ? `<img src="${imgTop}" style="max-width: 100%; max-height: 165px; object-fit: contain;">` : '<span style="font-size:9px;color:#94a3b8;">차트 로드 실패</span>'}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 12px; text-align: right; font-size: 9px; color: #94a3b8;">- Page 1 / 2 -</div>
+                    </div>
+
+                    <!-- PAGE 2: Performance Summary Tables -->
+                    <div style="padding-top: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 14px;">
+                            <span style="font-size: 12px; font-weight: 700; color: #1e293b;">실적 상세 요약 및 상위 상품 분석</span>
+                            <span style="font-size: 10px; color: #64748b;">${reportTitle} (Part 2)</span>
+                        </div>
+
+                        <!-- Store Performance Table -->
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-bottom: 5px; display: flex; align-items: center; gap: 5px;">
+                                <span style="display: inline-block; width: 4px; height: 11px; background-color: #2563eb; border-radius: 2px;"></span>
+                                지점(점포)별 실적 비교 현황
+                            </div>
+                            <table style="width: 100%; border-collapse: collapse; font-size: 9.5px; border: 1px solid #e2e8f0;">
+                                <thead style="background-color: #f8fafc; border-bottom: 2px solid #cbd5e1; color: #475569;">
+                                    <tr>
+                                        <th style="padding: 5px 8px; text-align: left;">지점명</th>
+                                        <th style="padding: 5px 8px; text-align: right;">거래 건수</th>
+                                        <th style="padding: 5px 8px; text-align: right;">판매 수량</th>
+                                        <th style="padding: 5px 8px; text-align: right;">총 할인액</th>
+                                        <th style="padding: 5px 8px; text-align: right;">총 매출액</th>
+                                        <th style="padding: 5px 8px; text-align: right;">점유율</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${storeRows}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Category Performance Table -->
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-bottom: 5px; display: flex; align-items: center; gap: 5px;">
+                                <span style="display: inline-block; width: 4px; height: 11px; background-color: #10b981; border-radius: 2px;"></span>
+                                카테고리별 실적 현황
+                            </div>
+                            <table style="width: 100%; border-collapse: collapse; font-size: 9.5px; border: 1px solid #e2e8f0;">
+                                <thead style="background-color: #f8fafc; border-bottom: 2px solid #cbd5e1; color: #475569;">
+                                    <tr>
+                                        <th style="padding: 5px 8px; text-align: left;">카테고리명</th>
+                                        <th style="padding: 5px 8px; text-align: right;">거래 건수</th>
+                                        <th style="padding: 5px 8px; text-align: right;">판매 수량</th>
+                                        <th style="padding: 5px 8px; text-align: right;">평균 단가</th>
+                                        <th style="padding: 5px 8px; text-align: right;">할인액 합계</th>
+                                        <th style="padding: 5px 8px; text-align: right;">총 매출액</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${catRows}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Top 5 Best Selling Products Table -->
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-bottom: 5px; display: flex; align-items: center; gap: 5px;">
+                                <span style="display: inline-block; width: 4px; height: 11px; background-color: #f59e0b; border-radius: 2px;"></span>
+                                상위 5개 베스트셀러 상품 상세
+                            </div>
+                            <table style="width: 100%; border-collapse: collapse; font-size: 9.5px; border: 1px solid #e2e8f0;">
+                                <thead style="background-color: #f8fafc; border-bottom: 2px solid #cbd5e1; color: #475569;">
+                                    <tr>
+                                        <th style="padding: 5px 8px; text-align: left;">순위</th>
+                                        <th style="padding: 5px 8px; text-align: left;">상품명</th>
+                                        <th style="padding: 5px 8px; text-align: left;">카테고리</th>
+                                        <th style="padding: 5px 8px; text-align: right;">판매수량</th>
+                                        <th style="padding: 5px 8px; text-align: right;">할인액</th>
+                                        <th style="padding: 5px 8px; text-align: right;">총 매출액</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${top5Rows}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Report Notes & Info -->
+                        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px; font-size: 8.5px; color: #64748b; line-height: 1.45; margin-top: 20px;">
+                            <p style="margin: 0 0 3px 0; font-weight: 700; color: #334155;">[리포트 안내사항]</p>
+                            <p style="margin: 0 0 2px 0;">* 본 리포트는 대시보드에서 조회된 필터 기준(${startDate} ~ ${endDate}, ${storeText}, ${catText}, ${promoText})으로 실시간 집계된 데이터입니다.</p>
+                            <p style="margin: 0 0 2px 0;">* 실매출액은 정상단가 × 수량에서 프로모션 할인액을 차감한 실제 순매출액 기준입니다.</p>
+                            <p style="margin: 0;">* 데이터 분석 및 보고서 추출: 매출 데이터 분석 대시보드 (Interactive CSV Analytics Platform)</p>
+                        </div>
+
+                        <div style="margin-top: 14px; text-align: right; font-size: 9px; color: #94a3b8;">- Page 2 / 2 -</div>
+                    </div>
+                `;
+
+                document.body.appendChild(reportEl);
+
+                const todayStr = new Date().toISOString().split('T')[0];
+                const filename = `${reportTitle.replace(/\s+/g, '_')}_${todayStr}.pdf`;
+
+                const opt = {
+                    margin: [8, 8, 8, 8],
+                    filename: filename,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: {
+                        scale: 2,
+                        useCORS: true,
+                        logging: false,
+                        scrollY: 0
+                    },
+                    jsPDF: {
+                        unit: 'mm',
+                        format: 'a4',
+                        orientation: orientation
+                    },
+                    pagebreak: { mode: ['css', 'legacy'] }
+                };
+
+                html2pdf().set(opt).from(reportEl).save().then(() => {
+                    if (reportEl.parentNode) document.body.removeChild(reportEl);
+                    document.getElementById('pdfLoadingModal').classList.add('hidden');
+                    showNotification('종합 분석 보고서 PDF가 성공적으로 다운로드되었습니다!');
+                }).catch((err) => {
+                    if (reportEl.parentNode) document.body.removeChild(reportEl);
+                    document.getElementById('pdfLoadingModal').classList.add('hidden');
+                    showNotification('PDF 생성 중 오류 발생: ' + err.message, 'error');
+                });
+
+            } catch (err) {
+                document.getElementById('pdfLoadingModal').classList.add('hidden');
+                showNotification('보고서 생성 실패: ' + err.message, 'error');
+            }
+        }
+
+        function exportCurrentTabPDF(reportTitle, orientation) {
+            try {
+                const activeTab = document.querySelector('.tab-content:not(.hidden)');
+                const activeTabBtn = document.querySelector('.tab-btn.active');
+                const tabName = activeTabBtn ? activeTabBtn.textContent.trim() : '화면';
+
+                if (!activeTab) {
+                    throw new Error('활성화된 탭을 찾을 수 없습니다.');
+                }
+
+                // Clone active tab content
+                const clone = activeTab.cloneNode(true);
+
+                // Convert canvases in activeTab to high-res images in clone
+                const origCanvases = activeTab.querySelectorAll('canvas');
+                const cloneCanvases = clone.querySelectorAll('canvas');
+
+                origCanvases.forEach((origCanvas, idx) => {
+                    const cloneCanvas = cloneCanvases[idx];
+                    if (cloneCanvas) {
+                        try {
+                            const dataUrl = origCanvas.toDataURL('image/png');
+                            const img = document.createElement('img');
+                            img.src = dataUrl;
+                            img.style.maxWidth = '100%';
+                            img.style.height = 'auto';
+                            img.style.display = 'block';
+                            img.style.margin = '0 auto';
+                            cloneCanvas.parentNode.replaceChild(img, cloneCanvas);
+                        } catch (e) {
+                            console.warn('Canvas conversion failed', e);
+                        }
+                    }
+                });
+
+                // Wrap clone with Header and metadata
+                const isLandscape = orientation === 'landscape';
+                const wrapper = document.createElement('div');
+                wrapper.style.width = isLandscape ? '1120px' : '794px';
+                wrapper.style.padding = '24px 28px';
+                wrapper.style.backgroundColor = '#ffffff';
+                wrapper.style.color = '#0f172a';
+                wrapper.style.fontFamily = "'Pretendard', sans-serif";
+                wrapper.style.position = 'absolute';
+                wrapper.style.left = '0';
+                wrapper.style.top = '0';
+                wrapper.style.zIndex = '-9999';
+                wrapper.style.opacity = '1';
+
+                const startDate = document.getElementById('startDate').value || '';
+                const endDate = document.getElementById('endDate').value || '';
+                const storeVal = document.getElementById('selectStore').value;
+                const catVal = document.getElementById('selectCategory').value;
+
+                wrapper.innerHTML = `
+                    <div style="border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end;">
+                        <div>
+                            <span style="background-color: #2563eb; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700;">${tabName} 리포트</span>
+                            <h2 style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 4px 0 0 0;">${reportTitle} - [${tabName}]</h2>
+                        </div>
+                        <div style="text-align: right; font-size: 10px; color: #64748b;">
+                            <div>출력일: ${new Date().toLocaleDateString('ko-KR')}</div>
+                            <div>조회조건: ${startDate} ~ ${endDate} | ${storeVal} | ${catVal}</div>
+                        </div>
+                    </div>
+                `;
+
+                wrapper.appendChild(clone);
+                document.body.appendChild(wrapper);
+
+                const todayStr = new Date().toISOString().split('T')[0];
+                const filename = `${reportTitle.replace(/\s+/g, '_')}_${tabName}_${todayStr}.pdf`;
+
+                const opt = {
+                    margin: [8, 8, 8, 8],
+                    filename: filename,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: {
+                        scale: 2,
+                        useCORS: true,
+                        logging: false,
+                        scrollY: 0
+                    },
+                    jsPDF: {
+                        unit: 'mm',
+                        format: 'a4',
+                        orientation: orientation
+                    },
+                    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+                };
+
+                html2pdf().set(opt).from(wrapper).save().then(() => {
+                    if (wrapper.parentNode) document.body.removeChild(wrapper);
+                    document.getElementById('pdfLoadingModal').classList.add('hidden');
+                    showNotification(`[${tabName}] 화면 PDF 저장이 완료되었습니다!`);
+                }).catch((err) => {
+                    if (wrapper.parentNode) document.body.removeChild(wrapper);
+                    document.getElementById('pdfLoadingModal').classList.add('hidden');
+                    showNotification('PDF 생성 중 오류 발생: ' + err.message, 'error');
+                });
+
+            } catch (err) {
+                document.getElementById('pdfLoadingModal').classList.add('hidden');
+                showNotification('현재 탭 PDF 저장 실패: ' + err.message, 'error');
+            }
         }
 
         function loadDataset(dataset, fileName) {
